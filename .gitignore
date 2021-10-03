@@ -1,5 +1,6 @@
 CMakeLists.txt.user
 CMakeCache.txt
+build
 CMakeFiles
 CMakeScripts
 Testing
@@ -9,3 +10,5 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 _deps
+.vs
+out

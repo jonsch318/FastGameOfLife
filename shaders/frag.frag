@@ -1,9 +1,19 @@
 #version 430 core
 
-in vec4 out_color;
+#define DATA_W 2500
+#define DATA_H 2500
+
+uniform vec2 WindowSize;
+
+layout(std430 , binding=5) buffer Nex{
+    int Next[DATA_W][DATA_H];
+};
 
 out vec4 fragColor;
 
 void main(){
-    fragColor = out_color;
+    int i = int((gl_FragCoord.x/WindowSize.x)*DATA_W);
+    int j = int((gl_FragCoord.y/WindowSize.y)*DATA_H);
+
+    fragColor = vec4(0.0,0.0,0.0,1.0) * (float(Next[i][j] == 1)) + vec4(1.0,1.0,1.0,1.0) * (float(Next[i][j] == 0));
 }

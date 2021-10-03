@@ -2,12 +2,15 @@
 #extension GL_ARB_compute_shader : enable
 #extension GL_ARB_shader_storage_buffer_object : enable
 
+#define DATA_W 2500
+#define DATA_H 2500
+
 layout(std430 , binding=4) buffer Dat{
-  int Data[1000][1000];
+  int Data[DATA_W][DATA_H];
 };
 
 layout(std430, binding=5) buffer Nex{
-  int Next[1000][1000];
+  int Next[DATA_W][DATA_H];
 };
 
 
@@ -15,23 +18,23 @@ layout( local_size_x = 20, local_size_y = 20, local_size_z = 1 ) in;
 
 void main(){
 
-  const int data_w = 1000;
-  const int data_h = 1000;
-
   uint gix = gl_GlobalInvocationID.x;
   uint giy = gl_GlobalInvocationID.y;
-
-  //printf("x %d y %d res %d \n", gix, giy, (gix+1+data_w)% data_w); 
 
   int sum = 0;
   for(int i = -1; i <= 1; i++){
     for(int j = -1; j <= 1; j++){
-      sum = sum + Data[(gix+i+data_w)% data_w][(giy + j + data_h)% data_h];
+      if(Data[(gix+i+DATA_W)% DATA_W][(giy + j + DATA_H)% DATA_H] == 1){
+        sum++;
+      }
     }
   }
 
   int c = Data[gix][giy];
-  sum = sum - c;
+  //if(c == 1){
+  //  sum -= 1;
+  //}
+  sum -= c;
 
   if(c == 0 && sum == 3){
     Next[gix][giy] = 1;
