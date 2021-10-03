@@ -6,15 +6,22 @@
 #include"GL/glew.h"
 #include "GLFW/glfw3.h"
 
-clock_t start, cycles, min = LONG_MAX, max = 0, avg, current;
-long runs = 0;
 
 const int RAND_BOOL = RAND_MAX / 2;
 const int WORK_GROUP_SIZE = 20;
-const int DATA_W = 2500;
-const int DATA_H = 2500;
+const int DATA_W = 1000;
+const int DATA_H = 1000;
 
-bool _playSim = true ;
+const int COMPUTE_GROUP_X = DATA_W / WORK_GROUP_SIZE;
+const int COMPUTE_GROUP_Y = DATA_H / WORK_GROUP_SIZE;
+
+bool _playSim = true;
+
+auto data = new int[DATA_W*DATA_H];
+auto next = new int[DATA_W*DATA_H];
+
+
+
 
 bool randomBool() {
    return rand() > RAND_BOOL;
@@ -70,7 +77,7 @@ GLuint CreateAndLinkProgram() {
 	glLinkProgram(program);
 
 	int success = 1;
-	//glGetProgramiv(program, GL_LINK_STATUS, &success);
+	glGetProgramiv(program, GL_LINK_STATUS, &success);
 
 	if (!success) {
 		char infoLog[512];
@@ -89,7 +96,7 @@ GLuint CreateAndLinkComputeShader(){
 
 	glLinkProgram(program);
 
-	int success;
+	int success = 1;
 	glGetProgramiv(program, GL_LINK_STATUS, &success);
 
 	if (!success) {
@@ -101,60 +108,7 @@ GLuint CreateAndLinkComputeShader(){
 	return program;	
 }
 
-float* GenerateVerteciesOld(int data_w, int data_h) {
-	float* vertecies = new float[24*data_w*data_h];
-
-	float factor_w = (float)2 / (float)data_w;
-	float factor_h = (float)2 / (float)data_h;
-
-	for (int i = 0; i < data_w; i++)
-	{
-		for (int j = 0; j < data_h; j++)
-		{
-			vertecies[24 * (i + (j * data_w))] = -1 + factor_w * i;
-			vertecies[24 * (i + (j * data_w)) + 1] = 1-factor_h*j;
-			vertecies[24 * (i + (j * data_w)) + 2] = i;
-			vertecies[24 * (i + (j * data_w)) + 3] = j;
-
-			vertecies[24 * (i + (j * data_w)) + 4] = -1 + factor_w * i;
-			vertecies[24 * (i + (j * data_w)) + 5] = 1-factor_h*(j+1);
-			vertecies[24 * (i + (j * data_w)) + 6] = i;
-			vertecies[24 * (i + (j * data_w)) + 7] = j;
-
-								
-			vertecies[24 * (i + (j * data_w)) + 8] = -1 + factor_w *(i+1);
-			vertecies[24 * (i + (j * data_w)) + 9] = 1-factor_h*(j);
-			vertecies[24 * (i + (j * data_w)) + 10] = i;
-			vertecies[24 * (i + (j * data_w)) + 11] = j;
-									
-			vertecies[24 * (i + (j * data_w)) + 12] = -1+factor_w*(i);
-			vertecies[24 * (i + (j * data_w)) + 13] = 1-factor_h*(j+1);
-			vertecies[24 * (i + (j * data_w)) + 14] = i;
-			vertecies[24 * (i + (j * data_w)) + 15] = j;
-									
-			vertecies[24 * (i + (j * data_w)) + 16] = -1+factor_w*(i+1);
-			vertecies[24 * (i + (j * data_w)) + 17] = 1-factor_h*(j+1);
-			vertecies[24 * (i + (j * data_w)) + 18] = i;
-			vertecies[24 * (i + (j * data_w)) + 19] = j;
-				
-			vertecies[24 * (i + (j * data_w)) + 20] = -1+factor_w*(i+1);
-			vertecies[24 * (i + (j * data_w)) + 21] = 1-factor_h*(j);
-			vertecies[24 * (i + (j * data_w)) + 22] = i;
-			vertecies[24 * (i + (j * data_w)) + 23] = j;
-
-		}
-	}
-
-	return vertecies;
-}
-
-float* GenerateVertecies(int data_w, int data_h) {
-	float* vertecies = new float[12]{
-		-1.0f,1.0f,-1.0f,-1.0f,1.0f,1.0f,-1.0f,-1.0f,1.0f,-1.0f,1.0f,1.0f
-	};
-
-	return vertecies;
-}
+float* GenerateVertecies();
 
 int main()
 {
@@ -163,11 +117,14 @@ int main()
 		return -1;
 	}
 
-	float* verticies = GenerateVertecies(DATA_W,DATA_H);
+	float* verticies = GenerateVertecies();
 
 	SetWindowHints();
 
 	GLFWwindow* window = glfwCreateWindow(800, 400, "Fast GameOfLife", nullptr, nullptr);
+	int width, height;
+	glfwGetFramebufferSize(window, &width, &height);
+	glViewport(0, 0, width, height);
 
 	if (window == nullptr) {
 		std::cerr << "GLFW Window creation failed" << std::endl;
@@ -208,16 +165,13 @@ int main()
 
 	srand (time(NULL));
 
-	auto data = new int[DATA_W][DATA_H];
 	for (int i = 0; i < DATA_W; i++)
 	{
 		for (int j = 0; j < DATA_H; j++)
 		{
-			data[i][j] = randomBool() ? 1 : 0;
+			data[j * DATA_W+i] = randomBool() ? 1 : 0;
 		}
 	}
-
-	auto next = new int[DATA_W][DATA_H];
 
 	//Init GameOfLife Shader Storage Buffer Objects
 
@@ -265,15 +219,15 @@ int main()
 
 		if (_playSim) {
 			glUseProgram(compute);
-			glDispatchCompute(DATA_W / WORK_GROUP_SIZE, DATA_H / WORK_GROUP_SIZE, 1);
-			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+			glDispatchCompute(COMPUTE_GROUP_X, COMPUTE_GROUP_Y, 1);
 		}
 		
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 
 		glBindVertexArray(VAO);
 		glUseProgram(shader);
-		glUniform2f(uniform_WindowSize, width, height);
+		glUniform2f(uniform_WindowSize, 1/width, 1/height);
 
 
 		glDrawArrays(GL_TRIANGLES, 0, 12);
@@ -283,8 +237,6 @@ int main()
 
 		glfwSwapBuffers(window);
 		
-
-
 	}
 
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -312,4 +264,12 @@ void HandleKeyInput(GLFWwindow* window, int key, int status, int action, int mod
 		//play sim.
 		_playSim = !_playSim;
 	}
+}
+
+float* GenerateVertecies() {
+	float* vertecies = new float[12]{
+		-1.0f,1.0f,-1.0f,-1.0f,1.0f,1.0f,-1.0f,-1.0f,1.0f,-1.0f,1.0f,1.0f
+	};
+
+	return vertecies;
 }
