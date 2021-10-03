@@ -1,6 +1,6 @@
-[submodule "include/glfw"]
-	path = include/glfw
+[submodule ".\\include\\glfw"]
+	path = .\\include\\glfw
 	url = https://github.com/glfw/glfw
-[submodule "include/glew"]
-	path = include/glew
+[submodule ".\\include\\glew"]
+	path = .\\include\\glew
 	url = https://github.com/Perlmint/glew-cmake
