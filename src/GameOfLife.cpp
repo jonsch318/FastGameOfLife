@@ -3,24 +3,25 @@
 #include "fstream"
 #include "sstream"
 
+#include <memory>
+
 #include"GL/glew.h"
 #include "GLFW/glfw3.h"
-
+#include <bitset>
+#include "../include/shader-printf/shaderprintf.h"
 
 const int RAND_BOOL = RAND_MAX / 2;
-const int WORK_GROUP_SIZE = 20;
-const int DATA_W = 1000;
-const int DATA_H = 1000;
+const int WORK_GROUP_SIZE = 32;
+const int DATA_W = 20;
+const int DATA_H = 20;
 
 const int COMPUTE_GROUP_X = DATA_W / WORK_GROUP_SIZE;
 const int COMPUTE_GROUP_Y = DATA_H / WORK_GROUP_SIZE;
 
 bool _playSim = true;
 
-auto data = new int[DATA_W*DATA_H];
+auto data = new int[DATA_W * DATA_H];
 auto next = new int[DATA_W*DATA_H];
-
-
 
 
 bool randomBool() {
@@ -48,7 +49,7 @@ GLuint CreateAndCompileShader(const std::string& path, GLuint shaderType) {
 
 	const std::string shaderSource = ReadFile(path);
 	const char* cShader = shaderSource.c_str();
-	glShaderSource(shader, 1, &cShader, nullptr);
+	glShaderSourcePrint(shader, 1, &cShader, nullptr);
 	glCompileShader(shader);
 
 	int success;
@@ -110,6 +111,8 @@ GLuint CreateAndLinkComputeShader(){
 
 float* GenerateVertecies();
 
+void SetCell(int *data, int x, int y);
+
 int main()
 {
 	if (!glfwInit()) {
@@ -150,7 +153,7 @@ int main()
 
 	GLuint VBO, VAO;
 	glGenVertexArrays(1, &VAO);
-	glGenBuffers(1, &VBO);
+	glGenBuffers(1, &VBO); 
 	glBindVertexArray(VAO);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(float)*12, verticies, GL_STATIC_DRAW);
@@ -163,15 +166,29 @@ int main()
 
 	//Init GameOfLife matricies
 
-	srand (time(NULL));
+	memset(data, 0, DATA_W * DATA_H*sizeof(int));
+	memset(next, 0, DATA_W * DATA_H*sizeof(int));
 
+	srand (time(NULL));
 	for (int i = 0; i < DATA_W; i++)
 	{
 		for (int j = 0; j < DATA_H; j++)
 		{
-			data[j * DATA_W+i] = randomBool() ? 1 : 0;
+			if (randomBool())
+				SetCell(data, i, j);
 		}
 	}
+
+
+	for (int i = 0; i < 10; i++)
+	{
+		for (int j = 0; j < 10; j++)
+		{
+			std::cout << "[" << (data[i + (j) * DATA_W] >> 1) << " | " << (data[i + (j) * DATA_W] & 1) << "], ";
+		}
+		std::cout << std::endl;
+	}
+	
 
 	//Init GameOfLife Shader Storage Buffer Objects
 
@@ -216,21 +233,33 @@ int main()
 			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, dataSSbo);
 		}
 
-
+		
 		if (_playSim) {
+
+			GLuint printBuffer = createPrintBuffer();
+			bindPrintBuffer(shader, printBuffer);
+
 			glUseProgram(compute);
 			glDispatchCompute(COMPUTE_GROUP_X, COMPUTE_GROUP_Y, 1);
+
+			printf("\n\nGLSL print:\n%s\n", getPrintBufferString(printBuffer).c_str());
+			deletePrintBuffer(printBuffer);
+
+			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
 		}
 		
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 
 		glBindVertexArray(VAO);
 		glUseProgram(shader);
-		glUniform2f(uniform_WindowSize, 1/width, 1/height);
+		glUniform2f(uniform_WindowSize, width, height);
 
+		
 
 		glDrawArrays(GL_TRIANGLES, 0, 12);
+
+
 
 		if(_playSim)
 			round = !round;
@@ -253,7 +282,7 @@ int main()
 	//Cleanup
 
 	delete[] data;
-	delete[] next;
+	//delete[] next;
 	delete[] verticies;
 	return 0;
 }
@@ -272,4 +301,17 @@ float* GenerateVertecies() {
 	};
 
 	return vertecies;
+}
+
+void SetCell(int* data, int x, int y) {
+	data[x+y*DATA_W] |= 1;
+	for (int i = -1; i <= 1; i++)
+	{
+		for (int j = -1; j <= 1; j++)
+		{
+			if (i != 0 ||j != 0) {
+				data[((x + i + DATA_W) % DATA_W) + ((y + j + DATA_H) % DATA_H) * DATA_W] += 2;
+			}
+		}
+	}
 }

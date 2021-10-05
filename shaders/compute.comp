@@ -2,8 +2,8 @@
 #extension GL_ARB_compute_shader : enable
 #extension GL_ARB_shader_storage_buffer_object : enable
 
-#define DATA_W 1000
-#define DATA_H 1000
+#define DATA_W 20
+#define DATA_H 20
 
 layout(std430 , binding=4) buffer Dat{
   int Data[DATA_W*DATA_H];
@@ -13,23 +13,50 @@ layout(std430, binding=5) buffer Nex{
   int Next[DATA_W*DATA_H];
 };
 
+layout( local_size_x = 32, local_size_y = 32, local_size_z = 1 ) in;
 
-layout( local_size_x = 20, local_size_y = 20, local_size_z = 1 ) in;
 
 void main(){
+  enablePrintf();
+  if(Data[gl_GlobalInvocationID.x + gl_GlobalInvocationID.y*DATA_W] != 0){
 
-  uint gix = gl_GlobalInvocationID.x;
-  uint giy = gl_GlobalInvocationID.y;
+    uint gix = gl_GlobalInvocationID.x;
+    uint giy = gl_GlobalInvocationID.y;
 
-  int sum = 0;
-  for(int i = -1; i <= 1; i++){
-    for(int j = -1; j <= 1; j++){
-        sum += Data[((gix+i+DATA_W)% DATA_W)+((giy + j + DATA_H)% DATA_H)*DATA_W];
+    int c = Data[gix +giy*DATA_W];
+    int count = c >> 1;
+
+    //printf("Count %d for %d ending %d\n", count, c, c & 1);
+
+    if((c & 1) == 1 && count != 2 && count != 3){
+
+      for (int i = -1; i <= 1; i++){
+        for (int j = -1; j <= 1; j++){
+          if(i != 0 || j != 0){
+            int x = int((gix + i + DATA_W) % DATA_W);
+            int y = int((giy + j + DATA_H) % DATA_H);
+            Next[x + y * DATA_W] = Data[x + y* DATA_W] - 2;
+          }
+        }
+      }
+
+      Next[gix+giy*DATA_W] = c & (~1);
+      int n = Next[gix+giy*DATA_W]; 
+      printf("x %d y %d DATA %d%d%d%d%d, RES %d%d%d%d%d\n", gix, giy, (c>>4)&1,(c>>3)&1,(c>>2)&1,(c>>1)&1, c&1, (n>>4)&1,(n>>3)&1,(n>>2)&1,(n>>1)&1, n&1);
+     // printf("c %d res c %d || bit %d res bit %d \n", count, Next[gix+giy*DATA_W] >> 1, c&1, Next[gix+giy*DATA_W]&1);
+
+    }else if((c & 1) == 0 && c == 6){
+      
+      for (int i = -1; i <= 1; i++){
+        for (int j = -1; j <= 1; j++){
+          if(i != 0 || j != 0){
+            Next[((gix + i + DATA_W) % DATA_W) + ((giy + j + DATA_H) % DATA_H) * DATA_W] = Data[((gix + i + DATA_W) % DATA_W) + ((giy + j + DATA_H) % DATA_H) * DATA_W] + 2;
+          }
+        }
+      }
+      Next[gix+giy*DATA_W] = c | 1;
     }
+
+
   }
-
-  int c = Data[gix+giy*DATA_W];
-  sum -= c;
-
-  Next[gix+giy*DATA_W] = int((c == 0 && sum == 3) || (c == 1 && (sum == 2 || sum == 3)));
 }
