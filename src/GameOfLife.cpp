@@ -8,20 +8,19 @@
 #include"GL/glew.h"
 #include "GLFW/glfw3.h"
 #include <bitset>
-#include "../include/shader-printf/shaderprintf.h"
 
 const int RAND_BOOL = RAND_MAX / 2;
 const int WORK_GROUP_SIZE = 32;
-const int DATA_W = 20;
-const int DATA_H = 20;
+const int DATA_W = 8192;
+const int DATA_H = 8192;
 
 const int COMPUTE_GROUP_X = DATA_W / WORK_GROUP_SIZE;
 const int COMPUTE_GROUP_Y = DATA_H / WORK_GROUP_SIZE;
+const double FPS_LIMIT = 1.0 / 20.0;
 
 bool _playSim = true;
 
 auto data = new int[DATA_W * DATA_H];
-auto next = new int[DATA_W*DATA_H];
 
 
 bool randomBool() {
@@ -49,7 +48,7 @@ GLuint CreateAndCompileShader(const std::string& path, GLuint shaderType) {
 
 	const std::string shaderSource = ReadFile(path);
 	const char* cShader = shaderSource.c_str();
-	glShaderSourcePrint(shader, 1, &cShader, nullptr);
+	glShaderSource(shader, 1, &cShader, nullptr);
 	glCompileShader(shader);
 
 	int success;
@@ -167,7 +166,6 @@ int main()
 	//Init GameOfLife matricies
 
 	memset(data, 0, DATA_W * DATA_H*sizeof(int));
-	memset(next, 0, DATA_W * DATA_H*sizeof(int));
 
 	srand (time(NULL));
 	for (int i = 0; i < DATA_W; i++)
@@ -178,17 +176,6 @@ int main()
 				SetCell(data, i, j);
 		}
 	}
-
-
-	for (int i = 0; i < 10; i++)
-	{
-		for (int j = 0; j < 10; j++)
-		{
-			std::cout << "[" << (data[i + (j) * DATA_W] >> 1) << " | " << (data[i + (j) * DATA_W] & 1) << "], ";
-		}
-		std::cout << std::endl;
-	}
-	
 
 	//Init GameOfLife Shader Storage Buffer Objects
 
@@ -201,7 +188,7 @@ int main()
 	GLuint nextSSbo;
 	glGenBuffers(1, &nextSSbo);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, nextSSbo);
-	glBufferData(GL_SHADER_STORAGE_BUFFER, DATA_W * DATA_H * sizeof(int), next, GL_STATIC_DRAW);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, DATA_W * DATA_H * sizeof(int), NULL, GL_STATIC_DRAW);
 
 	int uniform_WindowSize = glGetUniformLocation(shader,"WindowSize");
 
@@ -212,59 +199,53 @@ int main()
 	glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
 
 	bool round = false;
-
+	double lastUpdateTime = 0.0;
+	double lastFrameTime = 0;
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
-
-		//Clear colors
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-		int width, height;
-		glfwGetFramebufferSize(window, &width, &height);
-		glViewport(0, 0, width, height);
-
-		//compute generation
-		if (!round) {
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, dataSSbo);
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, nextSSbo);
-		}
-		else {
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, nextSSbo);
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, dataSSbo);
-		}
-
 		
-		if (_playSim) {
+		double now = glfwGetTime();
+		double delta = now - lastUpdateTime;
+		if ((now - lastFrameTime) >= FPS_LIMIT) {
+			//Clear colors
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-			GLuint printBuffer = createPrintBuffer();
-			bindPrintBuffer(shader, printBuffer);
+			//compute generation
+			if (!round) {
+				glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, dataSSbo);
+				glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, nextSSbo);
+			}
+			else {
+				glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, nextSSbo);
+				glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, dataSSbo);
+			}
 
-			glUseProgram(compute);
-			glDispatchCompute(COMPUTE_GROUP_X, COMPUTE_GROUP_Y, 1);
 
-			printf("\n\nGLSL print:\n%s\n", getPrintBufferString(printBuffer).c_str());
-			deletePrintBuffer(printBuffer);
+			if (_playSim) {
+				glUseProgram(compute);
+				glDispatchCompute(COMPUTE_GROUP_X, COMPUTE_GROUP_Y, 1);
 
-			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+				glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+			}
 
+			int width, height;
+			glfwGetFramebufferSize(window, &width, &height);
+			glViewport(0, 0, width, height);
+
+			glBindVertexArray(VAO);
+			glUseProgram(shader);
+			glUniform2f(uniform_WindowSize, width, height);
+
+			glDrawArrays(GL_TRIANGLES, 0, 12);
+
+			if (_playSim)
+				round = !round;
+
+			glfwSwapBuffers(window);
+
+			lastFrameTime = now;
 		}
-		
-
-
-		glBindVertexArray(VAO);
-		glUseProgram(shader);
-		glUniform2f(uniform_WindowSize, width, height);
-
-		
-
-		glDrawArrays(GL_TRIANGLES, 0, 12);
-
-
-
-		if(_playSim)
-			round = !round;
-
-		glfwSwapBuffers(window);
+		lastUpdateTime = now;
 		
 	}
 

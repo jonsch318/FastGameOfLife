@@ -1,7 +1,7 @@
 #version 430 core
 
-#define DATA_W 20
-#define DATA_H 20
+#define DATA_W 8192
+#define DATA_H 8192
 
 uniform vec2 WindowSize;
 
