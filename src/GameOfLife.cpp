@@ -20,8 +20,20 @@ const double FPS_LIMIT = 1.0 / 20.0;
 
 bool _playSim = true;
 
-auto data = new int[DATA_W * DATA_H];
+int* data = new int[DATA_W * DATA_H];
+float* verticies;
 
+GLuint dataSSbo = NULL;
+GLuint nextSSbo = NULL;
+GLuint VBO = NULL;
+GLuint VAO = NULL;
+GLuint shader = NULL;
+GLuint compute = NULL;
+GLFWwindow* window = NULL;
+
+void consoleOutStatus(const std::string status) {
+	std::cout << status << std::endl;
+}
 
 bool randomBool() {
    return rand() > RAND_BOOL;
@@ -76,7 +88,7 @@ GLuint CreateAndLinkProgram() {
 
 	glLinkProgram(program);
 
-	int success = 1;
+	int success;
 	glGetProgramiv(program, GL_LINK_STATUS, &success);
 
 	if (!success) {
@@ -112,18 +124,27 @@ float* GenerateVertecies();
 
 void SetCell(int *data, int x, int y);
 
+void cleanup();
+
 int main()
 {
+	atexit(cleanup);
+	at_quick_exit(cleanup);
+
+	consoleOutStatus("---- FAST GAMEOFLIFE ----");
+	consoleOutStatus("--- Initializing GLFW ---");
+
 	if (!glfwInit()) {
 		std::cerr << "glfw initialization failed" << std::endl;
 		return -1;
 	}
 
-	float* verticies = GenerateVertecies();
+
+	consoleOutStatus("--- Creating Window ---");
 
 	SetWindowHints();
 
-	GLFWwindow* window = glfwCreateWindow(800, 400, "Fast GameOfLife", nullptr, nullptr);
+	window = glfwCreateWindow(800, 400, "Fast GameOfLife", nullptr, nullptr);
 	int width, height;
 	glfwGetFramebufferSize(window, &width, &height);
 	glViewport(0, 0, width, height);
@@ -134,10 +155,11 @@ int main()
 		return  -2;
 	}
 
+	consoleOutStatus("--- Setting Window Context ---");
+
 	glfwMakeContextCurrent(window);
 
-	glfwSetKeyCallback(window, HandleKeyInput);
-	//glfwSetInputMode(window, GLFW_STICKY_KEYS, GLFW_TRUE);
+	consoleOutStatus("--- Initializing GLEW & Keyboard Callbacks ---");
 
 	if (glewInit() != GLEW_OK) {
 		std::cerr << "GLEW Init failed" << std::endl;
@@ -146,11 +168,19 @@ int main()
 		return -3;
 	}
 
+	glfwSetKeyCallback(window, HandleKeyInput);
+	glfwSetInputMode(window, GLFW_STICKY_KEYS, GLFW_TRUE);
 
-	GLuint shader = CreateAndLinkProgram();
-	GLuint compute = CreateAndLinkComputeShader();
+	consoleOutStatus("--- Create & Compile Shaders ---");
 
-	GLuint VBO, VAO;
+	shader = CreateAndLinkProgram();
+	compute = CreateAndLinkComputeShader();
+
+	consoleOutStatus("--- Generate Verticies and Buffers ---");
+
+	verticies = GenerateVertecies();
+
+
 	glGenVertexArrays(1, &VAO);
 	glGenBuffers(1, &VBO); 
 	glBindVertexArray(VAO);
@@ -162,6 +192,8 @@ int main()
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 
+
+	consoleOutStatus("--- Initialize Data Matrix ---");
 
 	//Init GameOfLife matricies
 
@@ -177,21 +209,26 @@ int main()
 		}
 	}
 
+	consoleOutStatus("--- Initialize Data SSBos---");
+
+
 	//Init GameOfLife Shader Storage Buffer Objects
 
-	GLuint dataSSbo;
+
 	glGenBuffers(1, &dataSSbo);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, dataSSbo);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, DATA_W * DATA_H * sizeof(int), data, GL_STATIC_DRAW);
 
 
-	GLuint nextSSbo;
+
 	glGenBuffers(1, &nextSSbo);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, nextSSbo);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, DATA_W * DATA_H * sizeof(int), NULL, GL_STATIC_DRAW);
 
 	int uniform_WindowSize = glGetUniformLocation(shader,"WindowSize");
 
+
+	consoleOutStatus("--- Start Game Loop---");
 
 
 	//Game loop
@@ -249,23 +286,37 @@ int main()
 		
 	}
 
+	return 0;
+}
+
+void cleanup() {
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-	glDeleteVertexArrays(1, &VAO);
-	glDeleteBuffers(1, &VBO);
-	glDeleteBuffers(1, &dataSSbo);
-	glDeleteBuffers(1, &nextSSbo);
-	glDeleteProgram(shader);
+	if(VAO != NULL)
+		glDeleteVertexArrays(1, &VAO);
+
+	if (VBO != NULL)
+		glDeleteVertexArrays(1, &VBO);
+
+	if (dataSSbo != NULL)
+		glDeleteVertexArrays(1, &dataSSbo);
+
+	if (nextSSbo != NULL)
+		glDeleteVertexArrays(1, &nextSSbo);
+
+	if (shader != NULL)
+		glDeleteProgram(shader);
+
+	if (compute != NULL)
+		glDeleteProgram(compute);
+
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
-	//Cleanup
-
 	delete[] data;
-	//delete[] next;
 	delete[] verticies;
-	return 0;
+
 }
 
 void HandleKeyInput(GLFWwindow* window, int key, int status, int action, int mods)
