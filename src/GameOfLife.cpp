@@ -9,26 +9,45 @@
 #include "GLFW/glfw3.h"
 #include <bitset>
 
+#include "../include/shader-printf/shaderprintf.h"
+
 const int RAND_BOOL = RAND_MAX / 2;
 const int WORK_GROUP_SIZE = 32;
-const int DATA_W = 8192;
-const int DATA_H = 8192;
+const int DATA_W = 512;
+const int DATA_H = 512;
 
 const int COMPUTE_GROUP_X = DATA_W / WORK_GROUP_SIZE;
 const int COMPUTE_GROUP_Y = DATA_H / WORK_GROUP_SIZE;
 const double FPS_LIMIT = 1.0 / 20.0;
 
+const float zoomFactorIn = 1.0f / 50.0f;
+const float zoomFactorOut = 1.0f / 50.0f;
+
 bool _playSim = true;
+float cursor_x = 0;
+float cursor_y = 0;
+
+float point_x = 0;
+float point_y = 0;
+float zoom_x = 0;
+float zoom_y = 0;
+float window_x = 0;
+float window_y = 0;
+float zoom_scalar = 1;
+float mapOffset_x = 0;
+float mapOffset_y = 0;
+float mapOffset_z = 0;
+float mapOffset_w = 0;
 
 int* data = new int[DATA_W * DATA_H];
 float* verticies;
 
-GLuint dataSSbo = NULL;
-GLuint nextSSbo = NULL;
-GLuint VBO = NULL;
-GLuint VAO = NULL;
-GLuint shader = NULL;
-GLuint compute = NULL;
+GLuint dataSSbo = (unsigned int)NULL;
+GLuint nextSSbo = (unsigned int)NULL;
+GLuint VBO = (unsigned int)NULL;
+GLuint VAO = (unsigned int)NULL;
+GLuint shader = (unsigned int)NULL;
+GLuint compute = (unsigned int)NULL;
 GLFWwindow* window = NULL;
 
 void consoleOutStatus(const std::string status) {
@@ -126,6 +145,47 @@ void SetCell(int *data, int x, int y);
 
 void cleanup();
 
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	float oldScalar = zoom_scalar;
+
+	if(yoffset > 0 && zoom_scalar - zoomFactorIn > 0){
+		//scroll up
+		zoom_scalar -= zoomFactorIn;
+
+	}else if (yoffset < 0 && zoom_scalar + zoomFactorOut <= 2){
+		//scroll down
+		zoom_scalar += zoomFactorOut;
+	}
+
+	float dif_scalar = zoom_scalar - oldScalar;
+
+	point_x -= -(cursor_x * dif_scalar);
+	point_y -= -(cursor_y * dif_scalar);
+
+	mapOffset_x = (point_x/window_x)*DATA_W;
+	mapOffset_y = (((window_x*zoom_scalar)-point_x)/window_x)*DATA_W;
+	mapOffset_z = (point_y/window_y)*DATA_H;
+	mapOffset_w = (((window_y*zoom_scalar)-point_y)/window_y)*DATA_H;
+}
+
+void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
+{
+	cursor_x = (float)xpos;
+	cursor_y = (float)ypos;
+}
+
+void framebuffer_size_callback(GLFWwindow *window, int width, int height){
+	glViewport(0, 0, width, height);
+	if(zoom_x == window_x){
+		zoom_x = (float)width;
+		zoom_y = (float)height;
+	}
+
+	window_x = (float)width;
+	window_y = (float)height;
+}
+
 int main()
 {
 	atexit(cleanup);
@@ -149,6 +209,14 @@ int main()
 	glfwGetFramebufferSize(window, &width, &height);
 	glViewport(0, 0, width, height);
 
+	window_x = (float)width;
+	window_y = (float)height;
+	zoom_x = (float)width;
+	zoom_y = (float)height;
+
+	mapOffset_y = (float)DATA_W;
+	mapOffset_w = (float)DATA_H;
+
 	if (window == nullptr) {
 		std::cerr << "GLFW Window creation failed" << std::endl;
 		glfwTerminate();
@@ -169,6 +237,9 @@ int main()
 	}
 
 	glfwSetKeyCallback(window, HandleKeyInput);
+	glfwSetScrollCallback(window, scroll_callback);
+	glfwSetCursorPosCallback(window, cursor_position_callback);
+	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GLFW_TRUE);
 
 	consoleOutStatus("--- Create & Compile Shaders ---");
@@ -197,7 +268,7 @@ int main()
 
 	//Init GameOfLife matricies
 
-	memset(data, 0, DATA_W * DATA_H*sizeof(int));
+	//memset(data, 0, DATA_W * DATA_H*sizeof(int));
 
 	srand (time(NULL));
 	for (int i = 0; i < DATA_W; i++)
@@ -226,14 +297,14 @@ int main()
 	glBufferData(GL_SHADER_STORAGE_BUFFER, DATA_W * DATA_H * sizeof(int), NULL, GL_STATIC_DRAW);
 
 	int uniform_WindowSize = glGetUniformLocation(shader,"WindowSize");
-
+	int uniform_MapOffset = glGetUniformLocation(shader,"MapOffset");
 
 	consoleOutStatus("--- Start Game Loop---");
 
 
 	//Game loop
 
-	glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
 	bool round = false;
 	double lastUpdateTime = 0.0;
@@ -272,6 +343,7 @@ int main()
 			glBindVertexArray(VAO);
 			glUseProgram(shader);
 			glUniform2f(uniform_WindowSize, width, height);
+			glUniform4f(uniform_MapOffset, mapOffset_x, mapOffset_y, mapOffset_z, mapOffset_w);
 
 			glDrawArrays(GL_TRIANGLES, 0, 12);
 
@@ -324,6 +396,16 @@ void HandleKeyInput(GLFWwindow* window, int key, int status, int action, int mod
 	if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
 		//play sim.
 		_playSim = !_playSim;
+	}else if(key == GLFW_KEY_B && action == GLFW_PRESS){
+		point_x = 0;
+		point_y = 0;
+		zoom_scalar = 1;
+		zoom_x = window_x;
+		zoom_y = window_y;
+		mapOffset_x = (float)0;
+		mapOffset_y = (float)DATA_W;
+		mapOffset_z = (float)0;
+		mapOffset_w = (float)DATA_H;
 	}
 }
 

@@ -2,8 +2,8 @@
 #extension GL_ARB_compute_shader : enable
 #extension GL_ARB_shader_storage_buffer_object : enable
 
-#define DATA_W 8192
-#define DATA_H 8192
+#define DATA_W 512
+#define DATA_H 512
 
 layout(std430 , binding=4) buffer Dat{
   int Data[DATA_W*DATA_H];
